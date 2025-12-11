@@ -7,7 +7,7 @@ from datetime import datetime
 # Импорты aiogram v2
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.exceptions import ChatNotFound, ChatAdministratorRequired, InsufficientRights
+from aiogram.utils.exceptions import ChatNotFound
 
 # Импорт планировщика
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -486,3 +486,4 @@ async def on_startup(dp):
 
 if __name__ == '__main__':
     executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
+
