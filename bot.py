@@ -211,7 +211,7 @@ async def send_welcome(message: types.Message):
     # Команды и примеры лучше в /new_contest и /cancel_contest.
     await message.reply(
         "Привет! Я бот для проведения розыгрышей. "
-        "Для создания нового конкурса используй команду /new_contest"
+        "Для создания нового конкурса используй команду /new_contest , /cancel_contest [ID канала] для отмены розыгрыша , пример: /cancel_contest -1001234567890"
     )
 
 @dp.message_handler(commands=['new_contest'])
@@ -466,4 +466,5 @@ async def on_startup(dp):
     logging.info("Bot started and APScheduler initialized!")
 
 if __name__ == '__main__':
+
     executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
