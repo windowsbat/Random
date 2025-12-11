@@ -3,11 +3,12 @@ import asyncio
 import random
 import os
 from datetime import datetime
+import pytz # <-- Добавлен для работы с часовыми поясами
 
 # Импорты aiogram v2
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.exceptions import ChatNotFound # Оставили только ChatNotFound
+from aiogram.utils.exceptions import ChatNotFound
 
 # Импорт планировщика
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -55,7 +56,6 @@ async def check_subscription(user_id: int, channel_id: str) -> bool:
         # Ловим общие ошибки API
         error_message = str(e)
         if 'not an administrator' in error_message or 'not member' in error_message:
-            # Эта ошибка должна была быть отловлена раньше, но оставляем на всякий случай
             logging.error(f"Бот не является администратором в канале {channel_id} для проверки подписки.")
         else:
             logging.error(f"Неизвестная ошибка API при проверке подписки: {e}")
@@ -198,7 +198,8 @@ async def publish_contest(contest_id: str):
     except Exception as e:
         logging.error(f"Не удалось опубликовать конкурс {contest_id}: {e}")
         # Если публикация не удалась, удаляем данные конкурса
-        del CONTESTS[contest_id]
+        if contest_id in CONTESTS:
+            del CONTESTS[contest_id]
         # Удаляем задачу публикации
         if scheduler.get_job(f"publish_{contest_id}"):
             scheduler.remove_job(f"publish_{contest_id}")
@@ -321,9 +322,21 @@ async def process_contest_input(message: types.Message):
         channel_username = lines[2].strip()
         winners_count = int(lines[3].strip())
         post_text = '\n'.join(lines[4:]).strip()
+        
+        # --- ИСПРАВЛЕНИЕ: Использование AWARE-DATETIME ---
+        # 1. Устанавливаем локальный часовой пояс.
+        # ВАЖНО: Замените 'Europe/Moscow' на ваш фактический часовой пояс,
+        # если вы вводите время не по МСК. 
+        LOCAL_TZ = pytz.timezone('Europe/Moscow')
 
-        publish_time = datetime.strptime(publish_time_str, "%Y-%m-%d %H:%M")
-        end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M")
+        # 2. Создаем наивные объекты datetime
+        naive_publish_time = datetime.strptime(publish_time_str, "%Y-%m-%d %H:%M")
+        naive_end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M")
+        
+        # 3. Делаем их "aware" (с учетом часового пояса), это время, которое ввел пользователь
+        publish_time = LOCAL_TZ.localize(naive_publish_time)
+        end_time = LOCAL_TZ.localize(naive_end_time)
+        # ------------------------------------------------
 
         if end_time <= publish_time:
             await message.reply("❌ Время окончания должно быть позже времени публикации.")
@@ -333,7 +346,7 @@ async def process_contest_input(message: types.Message):
         chat_info = await bot.get_chat(channel_username)
         channel_id = str(chat_info.id)
 
-        # 2. ПРОВЕРКА ПРАВ АДМИНИСТРАТОРА (НОВАЯ ФУНКЦИОНАЛЬНОСТЬ)
+        # 2. ПРОВЕРКА ПРАВ АДМИНИСТРАТОРА
         bot_member = await bot.get_chat_member(channel_id, bot.id)
 
         # Проверяем, что бот администратор И имеет права на публикацию сообщений
@@ -352,7 +365,8 @@ async def process_contest_input(message: types.Message):
              return
 
         CONTESTS[contest_id] = {
-            'end_time': end_time,
+            # Сохраняем aware-объекты для APScheduler
+            'end_time': end_time, 
             'channel_username': channel_username,
             'channel_id': channel_id,
             'winners_count': winners_count,
@@ -360,17 +374,19 @@ async def process_contest_input(message: types.Message):
             'participants': {},
             'post_message_id': None,
         }
+        
+        # Сравнение с текущим UTC временем (стандарт для серверов/планировщиков)
+        utc_now = datetime.now(pytz.utc)
 
-        now = datetime.now()
-
-        if publish_time <= now:
+        if publish_time <= utc_now: # <--- ИСПРАВЛЕННОЕ СРАВНЕНИЕ (aware vs aware)
              await publish_contest(contest_id)
              await message.reply("Время публикации прошло, конкурс опубликован немедленно.")
         else:
             scheduler.add_job(
                 publish_contest,
                 'date',
-                run_date=publish_time,
+                # Передаем aware-объект в планировщик
+                run_date=publish_time, 
                 args=[contest_id],
                 id=f"publish_{contest_id}"
             )
@@ -385,7 +401,7 @@ async def process_contest_input(message: types.Message):
     except ChatNotFound:
         await message.reply(f"❌ Канал с юзернеймом {channel_username} не найден. Проверьте правильность ввода.")
     except Exception as e:
-        # Универсальный блок для ловли всех ошибок API (включая ChatAdministratorRequired и InsufficientRights)
+        # Универсальный блок для ловли всех ошибок API
         error_text = str(e).lower()
         if 'not administrator of' in error_text or 'rights' in error_text or 'admin' in error_text or 'member list is inaccessible' in error_text:
             await message.reply(f"❌ **Проблема с правами в канале {channel_username}!**\n\n"
@@ -481,6 +497,7 @@ async def on_startup(dp):
     """
     Инициализация и запуск планировщика при старте бота.
     """
+    # Убедимся, что APScheduler запущен
     scheduler.start()
     logging.info("Bot started and APScheduler initialized!")
 
