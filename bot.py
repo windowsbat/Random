@@ -7,7 +7,7 @@ from datetime import datetime
 # Импорты aiogram v2
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.exceptions import ChatNotFound
+from aiogram.utils.exceptions import ChatNotFound # Оставили только ChatNotFound
 
 # Импорт планировщика
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -335,7 +335,7 @@ async def process_contest_input(message: types.Message):
 
         # 2. ПРОВЕРКА ПРАВ АДМИНИСТРАТОРА (НОВАЯ ФУНКЦИОНАЛЬНОСТЬ)
         bot_member = await bot.get_chat_member(channel_id, bot.id)
-        
+
         # Проверяем, что бот администратор И имеет права на публикацию сообщений
         if not bot_member.is_chat_admin() or not bot_member.can_post_messages:
             await message.reply(
@@ -384,15 +384,15 @@ async def process_contest_input(message: types.Message):
         await message.reply("❌ Ошибка формата данных. Проверьте дату/время (YYYY-MM-DD HH:MM) и количество победителей (число).")
     except ChatNotFound:
         await message.reply(f"❌ Канал с юзернеймом {channel_username} не найден. Проверьте правильность ввода.")
-    except ChatAdministratorRequired:
-        await message.reply(f"❌ **Бот не является администратором в канале {channel_username}!**\n\n"
-                            f"Сделайте бота администратором и дайте ему право на **Публикацию сообщений**.")
-    except InsufficientRights:
-        await message.reply(f"❌ **У бота недостаточно прав в канале {channel_username}!**\n\n"
-                            f"Убедитесь, что бот имеет право на **Публикацию сообщений**.")
     except Exception as e:
-        logging.exception("Ошибка при обработке ввода конкурса:")
-        await message.reply(f"❌ Произошла непредвиденная ошибка: {e}")
+        # Универсальный блок для ловли всех ошибок API (включая ChatAdministratorRequired и InsufficientRights)
+        error_text = str(e).lower()
+        if 'not administrator of' in error_text or 'rights' in error_text or 'admin' in error_text or 'member list is inaccessible' in error_text:
+            await message.reply(f"❌ **Проблема с правами в канале {channel_username}!**\n\n"
+                                f"Сделайте бота администратором и дайте ему право на **Публикацию сообщений**.")
+        else:
+            logging.exception("Ошибка при обработке ввода конкурса:")
+            await message.reply(f"❌ Произошла непредвиденная ошибка: {e}")
 
 
 @dp.callback_query_handler(lambda c: c.data and c.data.startswith('participate_'))
@@ -486,4 +486,3 @@ async def on_startup(dp):
 
 if __name__ == '__main__':
     executor.start_polling(dp, on_startup=on_startup, skip_updates=True)
-
